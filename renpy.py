@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+from glob import glob
 from pprint import pp
 from ripgrepy import Ripgrepy as rg
 pprint = pp
@@ -19,6 +20,13 @@ class Character:
         print(f"{self.name}: {txt}")
 
 
+class Block:
+    '''Denotes an indented block, in which all lines are > indent spaces in'''
+
+    def __init__(self, indent: int):
+        self.indent = indent
+
+
 class Line:
     def __init__(self, line: str):
         self.indent = len(line) - len(line.lstrip())
@@ -30,9 +38,14 @@ class Line:
 class Game:
     def __init__(self, loc: str):
         self.dir = loc
+        self.files = glob(f'{self.dir}/**/*.rpy', recursive=True)
         self.__preprocess()
 
     def __search(self, regex: str, keep: int = None):
+        '''
+        Search all scripts for a given pattern.
+        Useful for items needed at game start.
+        '''
         matches = rg(regex, self.dir).glob('*.rpy').json().run().as_dict
         matches = [m['data'] for m in matches if m['type'] == 'match']
         output = {} if keep else []
@@ -46,10 +59,13 @@ class Game:
                 output[name] = loc
             else:
                 output.append(loc)
-        pprint(output)
         return output
 
     def __preprocess(self):
+        '''
+        Load in data needed upon game load, before start.
+        Includes: storing label and init locations, processing defines/defaults
+        '''
         self.labels = self.__search('^ *label [^:]*', 1)
         self.init = self.__search('^init:')
         if self.init[0]:
