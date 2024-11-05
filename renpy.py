@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 import sys
+from dataclasses import dataclass
 from pprint import pp
 from ripgrepy import Ripgrepy as rg
 pprint = pp
 
-type Loc = tuple[str, int]
-
-
 def _(a: str):
     '''Ignore gettext translations'''
     return a
+
+
+@dataclass
+class Loc:
+    file: str
+    line: int
+    indent: int
 
 
 class Character:
@@ -49,8 +54,18 @@ class Game:
 
     def __init__(self, d: str):
         self.dir = d
+        self.variables = {}
         self.__commands()
         self.__preprocess()
+
+    def __commands(self):
+        '''
+        Set up dict of interpreter commands
+        '''
+        self.commands: dict = {
+            '$': self.__assignment,
+            'menu:': self.__menu,
+        }
 
     def __search(self, regex: str, keep: int = None):
         '''
@@ -64,7 +79,8 @@ class Game:
             file = m['path']['text']
             line = m['line_number']
             text = m['submatches'][0]['match']['text']
-            loc: Loc = (file, line)
+            indent = Line(m['lines']['text']).indent
+            loc = Loc(file, line, indent)
             if keep:
                 name = text.split()[keep]
                 output[name] = loc
@@ -80,28 +96,22 @@ class Game:
         self.labels: dict[str, Loc] = self.__search('^ *label [^:]*', 1)
         self.init: list[Loc] = self.__search('^init:')
 
-        for i in self.init:
-            self.loc: Loc = i
-            self.indent = 0  # assume entrypoints have no indents
-            self.run()
+        self.stack: list[Loc] = []
+        for loc in self.init:
+            self.run(loc)
 
-        self.loc: Loc = self.labels['start']
-
-    def run(self):
-        with open(self.loc[0], encoding='utf-8') as f:
-            zip(range(self.loc[1]), next(f))  # jump to desired line of file
+    def run(self, loc: Loc):
+        self.stack.append(loc)
+        with open(self.stack[-1].file, encoding='utf-8') as f:
+            # jump to desired line of file:
+            zip(range(self.stack[-1].line), next(f))
             for line in f:
+                self.stack[-1].line += 1
                 line = Line(line)
                 if line.keyword in self.commands:
                     self.commands[line.keyword](line)
-                if line.indent <= self.indent:
+                if line.indent <= self.stack[-1].indent:
                     break
-
-    def __commands(self):
-        self.commands: dict = {
-            '$': self.__assignment,
-            'menu:': self.__menu,
-        }
 
     def __assignment(self, line: Line):
         match line[1]:
